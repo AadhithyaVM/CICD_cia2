@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 public class GreetingService {
 
     // CHANGE THIS TEXT during the redeployment demo (e.g. "v2") and push to Git.
-    public static final String MESSAGE = "Hello from the CI/CD pipeline - version 1";
+    public static final String MESSAGE = "Hello from the CI/CD pipeline - version 2";
 
     private final String buildVersion;
 
