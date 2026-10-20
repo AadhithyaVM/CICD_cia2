@@ -1,0 +1,61 @@
+---
+# Installs Jenkins and every tool the pipeline needs on an Ubuntu 22.04 VM.
+# Usage: ansible-playbook -i ansible/jenkins-inventory.ini ansible/jenkins-setup.yml
+- name: Configure Jenkins server
+  hosts: jenkins
+  become: true
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        update_cache: true
+        name: [openjdk-17-jdk, maven, git, curl, ca-certificates, gnupg, docker.io, python3-pip, ansible-core]
+        state: present
+
+    - name: Add Jenkins apt key
+      ansible.builtin.get_url:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+        dest: /usr/share/keyrings/jenkins-keyring.asc
+        mode: "0644"
+
+    - name: Add Jenkins apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
+        state: present
+
+    - name: Install Jenkins
+      ansible.builtin.apt:
+        name: jenkins
+        update_cache: true
+        state: present
+
+    - name: Install Azure CLI
+      ansible.builtin.shell: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+      args:
+        creates: /usr/bin/az
+
+    - name: Install kubectl
+      ansible.builtin.command: az aks install-cli
+      args:
+        creates: /usr/local/bin/kubectl
+
+    - name: Let Jenkins use Docker
+      ansible.builtin.user:
+        name: jenkins
+        groups: docker
+        append: true
+
+    - name: Start and enable Docker and Jenkins
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+      loop: [docker, jenkins]
+
+    - name: Read Jenkins initial admin password
+      ansible.builtin.slurp:
+        src: /var/lib/jenkins/secrets/initialAdminPassword
+      register: pw
+
+    - name: Show initial admin password
+      ansible.builtin.debug:
+        msg: "Open http://{{ inventory_hostname }}:8080 and use password: {{ pw.content | b64decode }}"

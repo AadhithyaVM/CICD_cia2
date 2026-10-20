@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+k8s
+ansible
+docs
+*.md
+src
+target/*
+!target/app.jar

@@ -1,0 +1,66 @@
+---
+# Usage:
+#   ansible-playbook -i ansible/inventory.ini ansible/deploy.yml \
+#     -e image=<acr>.azurecr.io/cicd-demo:<tag>
+- name: Deploy cicd-demo to AKS
+  hosts: local
+  gather_facts: false
+  vars:
+    namespace: demo
+    manifest_dir: "{{ playbook_dir }}/../k8s"
+    rendered_dir: "{{ playbook_dir }}/../.rendered"
+
+  tasks:
+    - name: Fail if image variable is missing
+      ansible.builtin.assert:
+        that: image is defined
+        fail_msg: "Pass -e image=<registry>/<name>:<tag>"
+
+    - name: Create directory for rendered manifests
+      ansible.builtin.file:
+        path: "{{ rendered_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render manifests with the image tag
+      ansible.builtin.template:
+        src: "{{ manifest_dir }}/{{ item }}"
+        dest: "{{ rendered_dir }}/{{ item }}"
+        mode: "0644"
+      loop:
+        - namespace.yaml
+        - deployment.yaml
+        - service.yaml
+
+    - name: Apply manifests
+      ansible.builtin.command: kubectl apply -f "{{ rendered_dir }}/{{ item }}"
+      loop:
+        - namespace.yaml
+        - deployment.yaml
+        - service.yaml
+      register: apply_out
+      changed_when: "'unchanged' not in apply_out.stdout"
+
+    - name: Wait for the rollout to finish
+      ansible.builtin.command: kubectl rollout status deployment/cicd-demo -n {{ namespace }} --timeout=300s
+      changed_when: false
+
+    - name: Wait for the LoadBalancer public IP
+      ansible.builtin.command: >
+        kubectl get svc cicd-demo -n {{ namespace }}
+        -o jsonpath={.status.loadBalancer.ingress[0].ip}
+      register: svc_ip
+      until: svc_ip.stdout | length > 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: Show application URL
+      ansible.builtin.debug:
+        msg: "Application available at http://{{ svc_ip.stdout }}"
+
+    - name: Save URL for the pipeline
+      ansible.builtin.copy:
+        content: "{{ svc_ip.stdout }}"
+        dest: "{{ rendered_dir }}/service_ip.txt"
+        mode: "0644"
